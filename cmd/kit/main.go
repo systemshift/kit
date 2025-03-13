@@ -23,6 +23,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  init             Initialize a new repository\n")
 		fmt.Fprintf(os.Stderr, "  add <file>       Add file contents to the staging area\n")
 		fmt.Fprintf(os.Stderr, "  commit           Record changes to the repository\n")
+		fmt.Fprintf(os.Stderr, "  branch [name]    List or create branches\n")
+		fmt.Fprintf(os.Stderr, "  checkout <name>  Switch branches\n")
 		fmt.Fprintf(os.Stderr, "  log              Show commit logs\n")
 		fmt.Fprintf(os.Stderr, "  status           Show the working tree status\n")
 		fmt.Fprintf(os.Stderr, "  verify           Verify repository integrity using kernel methods\n")
@@ -78,6 +80,14 @@ func main() {
 		}
 
 		commitCmd(cwd, message)
+	case "branch":
+		branchCmd(cwd, flag.Args()[1:])
+	case "checkout":
+		if flag.NArg() < 2 {
+			fmt.Fprintf(os.Stderr, "Error: 'checkout' requires a branch name\n")
+			os.Exit(1)
+		}
+		checkoutCmd(cwd, flag.Args()[1])
 	case "status":
 		statusCmd(cwd)
 	case "log":
@@ -245,4 +255,87 @@ func logCmd(path string) {
 	// Format and print log
 	formattedLog := repo.FormatLog(log)
 	fmt.Println(formattedLog)
+}
+
+// branchCmd handles branch operations (create/list)
+func branchCmd(path string, args []string) {
+	// Check if this is a repository
+	if !repo.IsRepository(path) {
+		fmt.Fprintf(os.Stderr, "Error: Not a Kit repository\n")
+		os.Exit(1)
+	}
+
+	// Create a repository instance
+	r, err := repo.NewRepository(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to open repository: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Check if branch name was provided
+	if len(args) > 0 {
+		// Create a new branch
+		err := r.CreateBranch(args[0])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: Failed to create branch: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Created branch '%s'\n", args[0])
+		return
+	}
+
+	// List branches if no name provided
+	branches, err := r.ListBranches()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to list branches: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Check if there are any branches
+	if len(branches) == 0 {
+		fmt.Println("No branches yet")
+		return
+	}
+
+	// Print branches
+	currentBranch, _ := r.GetCurrentBranch()
+	for _, branch := range branches {
+		if branch.Name == currentBranch {
+			fmt.Printf("* %s\n", branch.Name)
+		} else {
+			fmt.Printf("  %s\n", branch.Name)
+		}
+	}
+}
+
+// checkoutCmd switches branches
+func checkoutCmd(path string, branchName string) {
+	// Check if this is a repository
+	if !repo.IsRepository(path) {
+		fmt.Fprintf(os.Stderr, "Error: Not a Kit repository\n")
+		os.Exit(1)
+	}
+
+	// Create a repository instance
+	r, err := repo.NewRepository(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to open repository: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Check if current branch is already the requested branch
+	currentBranch, err := r.GetCurrentBranch()
+	if err == nil && currentBranch == branchName {
+		fmt.Printf("Already on branch '%s'\n", branchName)
+		return
+	}
+
+	// Switch to the branch
+	err = r.CheckoutBranch(branchName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to checkout branch: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Switched to branch '%s'\n", branchName)
 }

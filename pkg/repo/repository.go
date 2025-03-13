@@ -189,6 +189,12 @@ func (r *Repository) Add(path string) error {
 
 // Status shows the status of the repository
 func (r *Repository) Status() (string, error) {
+	// Get current branch name
+	branchName, err := r.GetCurrentBranch()
+	if err != nil {
+		branchName = "main" // Default to main if we can't determine branch
+	}
+
 	// Check for different file states
 	modified := []string{}         // Modified but not staged
 	staged := []string{}           // Staged for commit
@@ -196,7 +202,7 @@ func (r *Repository) Status() (string, error) {
 	modified_tracked := []string{} // Modified since last commit (tracked files)
 
 	// Get all files in working directory
-	err := filepath.Walk(r.Path, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(r.Path, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -272,7 +278,7 @@ func (r *Repository) Status() (string, error) {
 
 	// Build status message
 	var sb strings.Builder
-	sb.WriteString("On branch main\n\n")
+	sb.WriteString(fmt.Sprintf("On branch %s\n\n", branchName))
 
 	if len(staged) > 0 {
 		sb.WriteString("Changes to be committed:\n")
