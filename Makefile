@@ -1,22 +1,34 @@
 # Kit Makefile
 
-.PHONY: build run clean test
+.PHONY: all build cli demo clean test install setup help
 
 # Default target
-all: build
+all: cli demo
 
-# Build the project
-build:
-	@echo "Building Kit..."
-	@go build -o bin/kit example.go
+# Build the CLI
+cli:
+	@echo "Building Kit CLI..."
+	@mkdir -p bin
+	@go build -o bin/kit ./cmd/kit
 
-# Run the demo
-run:
+# Build and run the CLI
+cli-run: cli
+	@echo "Running Kit CLI..."
+	@./bin/kit help
+
+# Build the demonstration example
+demo:
+	@echo "Building Kit demonstration..."
+	@mkdir -p bin
+	@go build -o bin/kitdemo example.go
+
+# Run the demonstration
+demo-run:
 	@echo "Running Kit demonstration..."
 	@go run example.go
 
 # Run with verbose output
-run-verbose:
+demo-verbose:
 	@echo "Running Kit demonstration with verbose output..."
 	@go run -v example.go
 
@@ -29,12 +41,12 @@ clean:
 # Run tests
 test:
 	@echo "Running tests..."
-	@go test ./kernel/...
+	@go test ./pkg/...
 
-# Install (for development)
+# Install CLI (for development)
 install:
-	@echo "Installing Kit..."
-	@go install
+	@echo "Installing Kit CLI..."
+	@go install ./cmd/kit
 
 # Setup development environment
 setup:
@@ -46,10 +58,12 @@ help:
 	@echo "Kit - A Kernel-Oriented Version Control System"
 	@echo ""
 	@echo "Available commands:"
-	@echo "  make build        - Build the Kit executable"
-	@echo "  make run          - Run the demonstration"
+	@echo "  make cli          - Build the Kit CLI executable"
+	@echo "  make cli-run      - Build and run the Kit CLI"
+	@echo "  make demo         - Build the Kit demonstration"
+	@echo "  make demo-run     - Run the Kit demonstration"
 	@echo "  make clean        - Clean build artifacts"
 	@echo "  make test         - Run tests"
-	@echo "  make install      - Install Kit"
+	@echo "  make install      - Install Kit CLI"
 	@echo "  make setup        - Setup development environment"
 	@echo "  make help         - Show this help message"
