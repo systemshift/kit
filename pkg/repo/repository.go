@@ -33,6 +33,7 @@ const (
 type RepositoryState struct {
 	HEAD     string                   // Current HEAD reference
 	Stage    map[string]string        // Staged files (path -> object ID)
+	Tracked  map[string]string        // Tracked files (path -> object ID from latest commit)
 	WorkTree map[string]WorkTreeEntry // Working tree files
 }
 
@@ -62,6 +63,7 @@ func NewRepository(path string) (*Repository, error) {
 	state := &RepositoryState{
 		HEAD:     "refs/heads/main",
 		Stage:    make(map[string]string),
+		Tracked:  make(map[string]string),
 		WorkTree: make(map[string]WorkTreeEntry),
 	}
 
@@ -187,10 +189,11 @@ func (r *Repository) Add(path string) error {
 
 // Status shows the status of the repository
 func (r *Repository) Status() (string, error) {
-	// Check for modified files
-	modified := []string{}
-	staged := []string{}
-	untracked := []string{}
+	// Check for different file states
+	modified := []string{}         // Modified but not staged
+	staged := []string{}           // Staged for commit
+	untracked := []string{}        // Not tracked by Git
+	modified_tracked := []string{} // Modified since last commit (tracked files)
 
 	// Get all files in working directory
 	err := filepath.Walk(r.Path, func(path string, info os.FileInfo, err error) error {
@@ -217,19 +220,46 @@ func (r *Repository) Status() (string, error) {
 			return err
 		}
 
-		// Check if file is in stage
+		// Check the file's status
+		isStaged := false
+		isTracked := false
+
+		// Check if file is in staging area
 		if _, ok := r.State.Stage[relPath]; ok {
+			isStaged = true
 			staged = append(staged, relPath)
 
-			// Check if file is also modified since staging
+			// Check if it's also modified since staging
 			if entry, ok := r.State.WorkTree[relPath]; ok {
 				fileInfo := info
 				if entry.ModTime != fileInfo.ModTime() || entry.Size != fileInfo.Size() {
 					modified = append(modified, relPath)
 				}
 			}
-		} else {
-			// If not in stage, it's untracked
+		}
+
+		// Check if file is tracked (committed)
+		if _, ok := r.State.Tracked[relPath]; ok {
+			isTracked = true
+
+			// If not staged but tracked, check if modified since last commit
+			if !isStaged {
+				// Get file hash
+				content, err := ioutil.ReadFile(path)
+				if err == nil {
+					hash := sha256.Sum256(content)
+					objID := hex.EncodeToString(hash[:])
+
+					// Compare with tracked version
+					if objID != r.State.Tracked[relPath] {
+						modified_tracked = append(modified_tracked, relPath)
+					}
+				}
+			}
+		}
+
+		// If neither staged nor tracked, it's untracked
+		if !isStaged && !isTracked {
 			untracked = append(untracked, relPath)
 		}
 
@@ -247,7 +277,12 @@ func (r *Repository) Status() (string, error) {
 	if len(staged) > 0 {
 		sb.WriteString("Changes to be committed:\n")
 		for _, file := range staged {
-			sb.WriteString(fmt.Sprintf("  new file: %s\n", file))
+			// Check if this is a new file or modified file
+			if _, ok := r.State.Tracked[file]; ok {
+				sb.WriteString(fmt.Sprintf("  modified: %s\n", file))
+			} else {
+				sb.WriteString(fmt.Sprintf("  new file: %s\n", file))
+			}
 		}
 		sb.WriteString("\n")
 	}
@@ -255,6 +290,14 @@ func (r *Repository) Status() (string, error) {
 	if len(modified) > 0 {
 		sb.WriteString("Changes not staged for commit:\n")
 		for _, file := range modified {
+			sb.WriteString(fmt.Sprintf("  modified: %s\n", file))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(modified_tracked) > 0 {
+		sb.WriteString("Changes not staged for commit:\n")
+		for _, file := range modified_tracked {
 			sb.WriteString(fmt.Sprintf("  modified: %s\n", file))
 		}
 		sb.WriteString("\n")
@@ -268,7 +311,7 @@ func (r *Repository) Status() (string, error) {
 		sb.WriteString("\n")
 	}
 
-	if len(staged) == 0 && len(modified) == 0 && len(untracked) == 0 {
+	if len(staged) == 0 && len(modified) == 0 && len(modified_tracked) == 0 && len(untracked) == 0 {
 		sb.WriteString("nothing to commit, working tree clean\n")
 	}
 

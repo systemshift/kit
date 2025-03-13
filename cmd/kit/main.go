@@ -22,6 +22,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Commands:\n")
 		fmt.Fprintf(os.Stderr, "  init             Initialize a new repository\n")
 		fmt.Fprintf(os.Stderr, "  add <file>       Add file contents to the staging area\n")
+		fmt.Fprintf(os.Stderr, "  commit           Record changes to the repository\n")
+		fmt.Fprintf(os.Stderr, "  log              Show commit logs\n")
 		fmt.Fprintf(os.Stderr, "  status           Show the working tree status\n")
 		fmt.Fprintf(os.Stderr, "  verify           Verify repository integrity using kernel methods\n")
 		fmt.Fprintf(os.Stderr, "  help             Show help information for a command\n")
@@ -55,8 +57,31 @@ func main() {
 			os.Exit(1)
 		}
 		addCmd(cwd, flag.Args()[1:])
+	case "commit":
+		message := ""
+
+		// Check for -m flag
+		fs := flag.NewFlagSet("commit", flag.ExitOnError)
+		fs.StringVar(&message, "m", "", "Commit message")
+
+		// Parse the remaining arguments
+		err := fs.Parse(flag.Args()[1:])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: Failed to parse commit arguments: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Check if a message was provided
+		if message == "" {
+			fmt.Fprintf(os.Stderr, "Error: Commit message is required (use -m \"message\")\n")
+			os.Exit(1)
+		}
+
+		commitCmd(cwd, message)
 	case "status":
 		statusCmd(cwd)
+	case "log":
+		logCmd(cwd)
 	case "verify":
 		verifyCmd(cwd)
 	case "help":
@@ -157,4 +182,67 @@ func verifyCmd(path string) {
 	// For now, just print a message since we haven't implemented full verification
 	fmt.Println("Repository integrity verified using Random Fourier Features")
 	fmt.Println("This is currently a placeholder for the full verification functionality")
+}
+
+// commitCmd records changes to the repository
+func commitCmd(path string, message string) {
+	// Check if this is a repository
+	if !repo.IsRepository(path) {
+		fmt.Fprintf(os.Stderr, "Error: Not a Kit repository\n")
+		os.Exit(1)
+	}
+
+	// Create a repository instance
+	r, err := repo.NewRepository(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to open repository: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Commit changes
+	commitID, err := r.Commit(message)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to commit changes: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Print commit ID (abbreviated)
+	shortID := commitID
+	if len(shortID) > 8 {
+		shortID = shortID[:8]
+	}
+	fmt.Printf("[%s] %s\n", shortID, message)
+}
+
+// logCmd shows the commit log
+func logCmd(path string) {
+	// Check if this is a repository
+	if !repo.IsRepository(path) {
+		fmt.Fprintf(os.Stderr, "Error: Not a Kit repository\n")
+		os.Exit(1)
+	}
+
+	// Create a repository instance
+	r, err := repo.NewRepository(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to open repository: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Get commit log
+	log, err := r.Log()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to get commit log: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Check if there are any commits
+	if len(log) == 0 {
+		fmt.Println("No commits yet")
+		return
+	}
+
+	// Format and print log
+	formattedLog := repo.FormatLog(log)
+	fmt.Println(formattedLog)
 }

@@ -19,14 +19,16 @@ type IndexEntry struct {
 
 // Index represents the repository index
 type Index struct {
-	Entries map[string]IndexEntry `json:"entries"`
+	Entries  map[string]IndexEntry `json:"entries"`  // Staged entries
+	Tracking map[string]IndexEntry `json:"tracking"` // Tracked (committed) entries
 }
 
 // SaveIndex saves the index to a file
 func (r *Repository) SaveIndex() error {
-	// Create index from staging area
+	// Create index from staging area and tracked files
 	index := Index{
-		Entries: make(map[string]IndexEntry),
+		Entries:  make(map[string]IndexEntry),
+		Tracking: make(map[string]IndexEntry),
 	}
 
 	// Add entries from staging area
@@ -37,6 +39,26 @@ func (r *Repository) SaveIndex() error {
 		}
 
 		index.Entries[path] = IndexEntry{
+			Path:    path,
+			ObjID:   objID,
+			Size:    entry.Size,
+			ModTime: entry.ModTime,
+		}
+	}
+
+	// Add entries from tracked files
+	for path, objID := range r.State.Tracked {
+		entry, ok := r.State.WorkTree[path]
+		if !ok {
+			// If no working tree entry, create a minimal entry
+			index.Tracking[path] = IndexEntry{
+				Path:  path,
+				ObjID: objID,
+			}
+			continue
+		}
+
+		index.Tracking[path] = IndexEntry{
 			Path:    path,
 			ObjID:   objID,
 			Size:    entry.Size,
@@ -95,6 +117,26 @@ func (r *Repository) LoadIndex() error {
 			Size:    entry.Size,
 			ModTime: entry.ModTime,
 			Hash:    entry.ObjID,
+		}
+	}
+
+	// Update tracked files
+	for _, entry := range index.Tracking {
+		r.State.Tracked[entry.Path] = entry.ObjID
+
+		// Add to working tree if not already there
+		if _, ok := r.State.WorkTree[entry.Path]; !ok {
+			// Try to get file stats
+			filePath := filepath.Join(r.Path, entry.Path)
+			fileInfo, err := os.Stat(filePath)
+			if err == nil {
+				r.State.WorkTree[entry.Path] = WorkTreeEntry{
+					Path:    entry.Path,
+					Size:    fileInfo.Size(),
+					ModTime: fileInfo.ModTime(),
+					Hash:    entry.ObjID,
+				}
+			}
 		}
 	}
 
