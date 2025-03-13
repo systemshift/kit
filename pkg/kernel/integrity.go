@@ -61,7 +61,7 @@ func (k *IntegrityKernel) DataToFeatureVector(data []byte) []float64 {
 	vector := make([]float64, k.InputDim)
 
 	// Slide over the hash with a 4-byte window (interpreting as uint32)
-	for i := 0; i < min(len(hash)/4, k.InputDim); i++ {
+	for i := 0; i < Min(len(hash)/4, k.InputDim); i++ {
 		// Convert 4 bytes to uint32
 		val := binary.BigEndian.Uint32(hash[i*4 : i*4+4])
 		// Normalize to [-1, 1]
@@ -122,12 +122,4 @@ func (k *IntegrityKernel) VerifyIntegrity(data1, data2 []byte, threshold float64
 	similarity := k.Similarity(hash1, hash2)
 
 	return similarity, similarity >= threshold
-}
-
-// Helper function to find the minimum of two integers
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
