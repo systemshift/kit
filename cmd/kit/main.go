@@ -25,6 +25,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  commit           Record changes to the repository\n")
 		fmt.Fprintf(os.Stderr, "  branch [name]    List or create branches\n")
 		fmt.Fprintf(os.Stderr, "  checkout <name>  Switch branches\n")
+		fmt.Fprintf(os.Stderr, "  diff [options]   Show changes between commits or working directory\n")
 		fmt.Fprintf(os.Stderr, "  log              Show commit logs\n")
 		fmt.Fprintf(os.Stderr, "  status           Show the working tree status\n")
 		fmt.Fprintf(os.Stderr, "  verify           Verify repository integrity using kernel methods\n")
@@ -88,6 +89,8 @@ func main() {
 			os.Exit(1)
 		}
 		checkoutCmd(cwd, flag.Args()[1])
+	case "diff":
+		diffCmd(cwd, flag.Args()[1:])
 	case "status":
 		statusCmd(cwd)
 	case "log":
@@ -338,4 +341,76 @@ func checkoutCmd(path string, branchName string) {
 	}
 
 	fmt.Printf("Switched to branch '%s'\n", branchName)
+}
+
+// diffCmd shows differences between commits or working directory
+func diffCmd(path string, args []string) {
+	// Check if this is a repository
+	if !repo.IsRepository(path) {
+		fmt.Fprintf(os.Stderr, "Error: Not a Kit repository\n")
+		os.Exit(1)
+	}
+
+	// Create a repository instance
+	r, err := repo.NewRepository(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to open repository: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Parse options
+	fs := flag.NewFlagSet("diff", flag.ExitOnError)
+	semantic := fs.Bool("semantic", false, "Use semantic diff")
+	context := fs.Int("context", 3, "Number of context lines")
+
+	// Parse args (ignoring unknown flags, which might be commit IDs)
+	err = fs.Parse(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to parse diff arguments: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Create diff options
+	options := &repo.DiffOptions{
+		ContextLines: *context,
+		Semantic:     *semantic,
+	}
+
+	// Get remaining args (for commit IDs)
+	remainingArgs := fs.Args()
+	var commitA, commitB string
+
+	// Handle different diff modes based on number of arguments
+	switch len(remainingArgs) {
+	case 0:
+		// No commits specified, diff working tree vs HEAD
+		commitA = "" // HEAD
+		commitB = "" // Working directory
+	case 1:
+		// One commit specified, diff working tree vs that commit
+		commitA = remainingArgs[0]
+		commitB = "" // Working directory
+	case 2:
+		// Two commits specified, diff between those commits
+		commitA = remainingArgs[0]
+		commitB = remainingArgs[1]
+	default:
+		fmt.Fprintf(os.Stderr, "Error: Too many arguments for diff\n")
+		os.Exit(1)
+	}
+
+	// Perform the diff
+	diff, err := r.Diff(commitA, commitB, options)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to perform diff: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Format and print the diff
+	output := repo.FormatDiff(diff)
+	if output == "" {
+		fmt.Println("No differences")
+	} else {
+		fmt.Print(output)
+	}
 }
