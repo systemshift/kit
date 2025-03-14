@@ -3,7 +3,6 @@ package repo
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -154,7 +153,7 @@ func (r *Repository) verifyReferences(result *VerificationResult) error {
 		}
 
 		// Read the reference content (commit ID)
-		data, err := ioutil.ReadFile(path)
+		data, err := os.ReadFile(path)
 		if err != nil {
 			result.ReferencesOK = false
 			return nil
@@ -190,7 +189,7 @@ func (r *Repository) verifyReferences(result *VerificationResult) error {
 	headPath := filepath.Join(r.Path, DefaultKitDir, "HEAD")
 	if _, err := os.Stat(headPath); !os.IsNotExist(err) {
 		// HEAD exists, verify it
-		data, err := ioutil.ReadFile(headPath)
+		data, err := os.ReadFile(headPath)
 		if err != nil {
 			result.ReferencesOK = false
 			result.Status = false
@@ -234,7 +233,7 @@ func (r *Repository) verifyIndex(result *VerificationResult) error {
 	}
 
 	// Read and parse the index file
-	data, err := ioutil.ReadFile(indexPath)
+	data, err := os.ReadFile(indexPath)
 	if err != nil {
 		result.Status = false
 		return nil

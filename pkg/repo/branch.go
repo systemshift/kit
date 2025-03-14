@@ -3,7 +3,6 @@ package repo
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,7 +46,7 @@ func (r *Repository) ListBranches() ([]Branch, error) {
 	}
 
 	// Get all files in branches directory
-	files, err := ioutil.ReadDir(branchesDir)
+	files, err := os.ReadDir(branchesDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read branches directory: %w", err)
 	}
@@ -65,7 +64,7 @@ func (r *Repository) ListBranches() ([]Branch, error) {
 
 		// Read branch file to get commit ID
 		branchPath := filepath.Join(branchesDir, branchName)
-		commitID, err := ioutil.ReadFile(branchPath)
+		commitID, err := os.ReadFile(branchPath)
 		if err != nil {
 			continue // Skip branches we can't read
 		}
@@ -199,7 +198,7 @@ func (r *Repository) CheckoutBranch(name string) error {
 		}
 
 		// Write the file
-		if err := ioutil.WriteFile(filePath, objectData, 0644); err != nil {
+		if err := os.WriteFile(filePath, objectData, 0644); err != nil {
 			return fmt.Errorf("failed to write file %s: %w", filePath, err)
 		}
 
@@ -229,7 +228,7 @@ func (r *Repository) CheckoutBranch(name string) error {
 
 	// Update HEAD to point to the branch
 	headPath := filepath.Join(r.Path, DefaultKitDir, DefaultKitHeadFile)
-	if err := ioutil.WriteFile(headPath, []byte(fmt.Sprintf("ref: refs/heads/%s\n", name)), 0644); err != nil {
+	if err := os.WriteFile(headPath, []byte(fmt.Sprintf("ref: refs/heads/%s\n", name)), 0644); err != nil {
 		return fmt.Errorf("failed to update HEAD reference: %w", err)
 	}
 
@@ -248,7 +247,7 @@ func (r *Repository) CheckoutBranch(name string) error {
 func (r *Repository) GetCurrentBranch() (string, error) {
 	// Read HEAD file
 	headPath := filepath.Join(r.Path, DefaultKitDir, DefaultKitHeadFile)
-	data, err := ioutil.ReadFile(headPath)
+	data, err := os.ReadFile(headPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read HEAD file: %w", err)
 	}

@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,13 +111,13 @@ func (r *Repository) Initialize() error {
 
 	// Create HEAD file pointing to main branch
 	headPath := filepath.Join(kitDir, DefaultKitHeadFile)
-	if err := ioutil.WriteFile(headPath, []byte("ref: refs/heads/main\n"), 0644); err != nil {
+	if err := os.WriteFile(headPath, []byte("ref: refs/heads/main\n"), 0644); err != nil {
 		return fmt.Errorf("failed to create HEAD file: %w", err)
 	}
 
 	// Create empty index file
 	indexPath := filepath.Join(kitDir, DefaultKitIndexFile)
-	if err := ioutil.WriteFile(indexPath, []byte{}, 0644); err != nil {
+	if err := os.WriteFile(indexPath, []byte{}, 0644); err != nil {
 		return fmt.Errorf("failed to create index file: %w", err)
 	}
 
@@ -135,7 +134,7 @@ func (r *Repository) Initialize() error {
 	semanticembeddingdim = 128
 	semanticminimumscore = 0.7
 `
-	if err := ioutil.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		return fmt.Errorf("failed to create config file: %w", err)
 	}
 
@@ -148,7 +147,7 @@ func (r *Repository) Add(path string) error {
 	absPath := filepath.Join(r.Path, path)
 
 	// Read file content
-	content, err := ioutil.ReadFile(absPath)
+	content, err := os.ReadFile(absPath)
 	if err != nil {
 		return fmt.Errorf("failed to read file %s: %w", path, err)
 	}
@@ -251,7 +250,7 @@ func (r *Repository) Status() (string, error) {
 			// If not staged but tracked, check if modified since last commit
 			if !isStaged {
 				// Get file hash
-				content, err := ioutil.ReadFile(path)
+				content, err := os.ReadFile(path)
 				if err == nil {
 					hash := sha256.Sum256(content)
 					objID := hex.EncodeToString(hash[:])
@@ -335,7 +334,7 @@ func (r *Repository) storeObject(objID string, content []byte) error {
 	}
 
 	// Write object to file
-	if err := ioutil.WriteFile(objPath, content, 0644); err != nil {
+	if err := os.WriteFile(objPath, content, 0644); err != nil {
 		return fmt.Errorf("failed to write object: %w", err)
 	}
 
@@ -345,7 +344,7 @@ func (r *Repository) storeObject(objID string, content []byte) error {
 // readObject reads an object from the object database
 func (r *Repository) readObject(objID string) ([]byte, error) {
 	objPath := filepath.Join(r.Path, DefaultKitDir, DefaultKitObjectsDir, objID[:2], objID[2:])
-	content, err := ioutil.ReadFile(objPath)
+	content, err := os.ReadFile(objPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read object %s: %w", objID, err)
 	}

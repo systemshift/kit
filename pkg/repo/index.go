@@ -3,7 +3,6 @@ package repo
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 )
@@ -36,7 +35,7 @@ func (r *Repository) SaveIndex() error {
 
 	// Write to file
 	indexPath := filepath.Join(r.Path, DefaultKitDir, DefaultKitIndexFile)
-	if err := ioutil.WriteFile(indexPath, data, 0644); err != nil {
+	if err := os.WriteFile(indexPath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write index file: %w", err)
 	}
 
@@ -59,7 +58,7 @@ func (r *Repository) LoadIndex() error {
 	}
 
 	// Read index file
-	data, err := ioutil.ReadFile(indexPath)
+	data, err := os.ReadFile(indexPath)
 	if err != nil {
 		return fmt.Errorf("failed to read index file: %w", err)
 	}
@@ -98,7 +97,7 @@ func (r *Repository) LoadIndex() error {
 	} else {
 		// Try to read HEAD from file
 		headPath := filepath.Join(r.Path, DefaultKitDir, DefaultKitHeadFile)
-		if headData, err := ioutil.ReadFile(headPath); err == nil {
+		if headData, err := os.ReadFile(headPath); err == nil {
 			content := string(headData)
 			if len(content) > 5 && content[:4] == "ref:" {
 				r.State.HEAD = content[5 : len(content)-1] // Remove "ref: " and trailing newline
