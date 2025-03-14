@@ -81,7 +81,7 @@ func (r *Repository) VerifyIntegrity() (*VerificationResult, error) {
 }
 
 // verifyObjects checks all objects in the objects directory
-func (r *Repository) verifyObjects(result *VerificationResult) (int, error) {
+func (r *Repository) verifyObjects(_ *VerificationResult) (int, error) {
 	objectsDir := filepath.Join(r.Path, DefaultKitDir, DefaultKitObjectsDir)
 
 	// Skip if objects directory doesn't exist

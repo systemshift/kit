@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -419,7 +419,7 @@ func (r *Repository) diffTrees(treeA, treeB *TreeObject, options *DiffOptions) (
 // readWorkingFile reads a file from the working tree
 func (r *Repository) readWorkingFile(path string) ([]byte, error) {
 	absPath := filepath.Join(r.Path, path)
-	content, err := ioutil.ReadFile(absPath)
+	content, err := os.ReadFile(absPath)
 	if err != nil {
 		return nil, err
 	}
@@ -593,7 +593,7 @@ func convertToEdits(oldLines, newLines []string, lcs [][]int) []Edit {
 }
 
 // groupEditsIntoChunks groups edits into chunks with context lines
-func groupEditsIntoChunks(oldLines, newLines []string, edits []Edit, contextLines int) []DiffChunk {
+func groupEditsIntoChunks(_ []string, _ []string, edits []Edit, contextLines int) []DiffChunk {
 	chunks := []DiffChunk{}
 	if len(edits) == 0 {
 		return chunks
@@ -682,13 +682,13 @@ func FormatDiff(results []DiffResult) string {
 	for _, result := range results {
 		// File header
 		if result.OldPath == "/dev/null" {
-			buf.WriteString(fmt.Sprintf("--- /dev/null\n"))
+			buf.WriteString("--- /dev/null\n")
 		} else {
 			buf.WriteString(fmt.Sprintf("--- a/%s\n", result.OldPath))
 		}
 
 		if result.NewPath == "/dev/null" {
-			buf.WriteString(fmt.Sprintf("+++ /dev/null\n"))
+			buf.WriteString("+++ /dev/null\n")
 		} else {
 			buf.WriteString(fmt.Sprintf("+++ b/%s\n", result.NewPath))
 		}

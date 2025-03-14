@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -210,7 +209,7 @@ func (r *Repository) Merge(branchName string, options *MergeOptions) (*MergeResu
 			return nil, fmt.Errorf("failed to create directory for %s: %w", path, err)
 		}
 
-		err = ioutil.WriteFile(filePath, objectData, 0644)
+		err = os.WriteFile(filePath, objectData, 0644)
 		if err != nil {
 			return nil, fmt.Errorf("failed to write file %s: %w", path, err)
 		}
@@ -477,11 +476,15 @@ func (r *Repository) MergeTrees(baseTree, ourTree, theirTree *TreeObject, option
 
 			if options.UseSemantic && isCodeFile(path) {
 				// For semantic merge of new files, we can try with empty base
+				var err error
 				mergedContent, hasConflict, err = r.SemanticMergeFiles(
 					"", // Empty base
 					string(ourContent),
 					string(theirContent),
 				)
+				if err != nil {
+					return nil, nil, fmt.Errorf("failed to merge new file %s with semantic merge: %w", path, err)
+				}
 			} else {
 				// Without a base, always conflict unless strategy is specified
 				hasConflict = true
@@ -711,7 +714,7 @@ func (r *Repository) SemanticMergeFiles(baseContent, ourContent, theirContent st
 	if hasConflict {
 		// Add semantic similarity information
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("// SEMANTIC ANALYSIS:\n"))
+		sb.WriteString("// SEMANTIC ANALYSIS:\n")
 		sb.WriteString(fmt.Sprintf("// Our changes similarity to base: %.2f%%\n", ourSimilarity*100))
 		sb.WriteString(fmt.Sprintf("// Their changes similarity to base: %.2f%%\n", theirSimilarity*100))
 		sb.WriteString(fmt.Sprintf("// Combined similarity: %.2f%%\n", combinedSimilarity*100))
@@ -772,7 +775,7 @@ func (r *Repository) WriteConflictMarkers(conflicts []MergeConflict) error {
 			return fmt.Errorf("failed to create directory for %s: %w", conflict.Path, err)
 		}
 
-		err = ioutil.WriteFile(filePath, []byte(content.String()), 0644)
+		err = os.WriteFile(filePath, []byte(content.String()), 0644)
 		if err != nil {
 			return fmt.Errorf("failed to write conflict markers to %s: %w", conflict.Path, err)
 		}
@@ -785,7 +788,7 @@ func (r *Repository) WriteConflictMarkers(conflicts []MergeConflict) error {
 func (r *Repository) ResolveConflict(path string, resolution string) error {
 	// Update the file with resolved content
 	filePath := filepath.Join(r.Path, path)
-	err := ioutil.WriteFile(filePath, []byte(resolution), 0644)
+	err := os.WriteFile(filePath, []byte(resolution), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write resolved content to %s: %w", path, err)
 	}

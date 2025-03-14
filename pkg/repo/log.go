@@ -69,11 +69,7 @@ func FormatLog(log []*CommitLog) string {
 			sb.WriteString("\n")
 		}
 
-		// Format commit ID
-		shortID := commit.ID
-		if len(shortID) > 8 {
-			shortID = shortID[:8]
-		}
+		// Format commit ID (use full ID for now as per standard git)
 		sb.WriteString(fmt.Sprintf("commit %s\n", commit.ID))
 
 		// Format author and timestamp
