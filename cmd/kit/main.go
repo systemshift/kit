@@ -26,6 +26,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  branch [name]    List or create branches\n")
 		fmt.Fprintf(os.Stderr, "  checkout <name>  Switch branches\n")
 		fmt.Fprintf(os.Stderr, "  diff [options]   Show changes between commits or working directory\n")
+		fmt.Fprintf(os.Stderr, "  merge [options]  Merge changes from another branch\n")
 		fmt.Fprintf(os.Stderr, "  log              Show commit logs\n")
 		fmt.Fprintf(os.Stderr, "  status           Show the working tree status\n")
 		fmt.Fprintf(os.Stderr, "  verify           Verify repository integrity using kernel methods\n")
@@ -91,6 +92,8 @@ func main() {
 		checkoutCmd(cwd, flag.Args()[1])
 	case "diff":
 		diffCmd(cwd, flag.Args()[1:])
+	case "merge":
+		mergeCmd(cwd, flag.Args()[1:])
 	case "status":
 		statusCmd(cwd)
 	case "log":
@@ -341,6 +344,93 @@ func checkoutCmd(path string, branchName string) {
 	}
 
 	fmt.Printf("Switched to branch '%s'\n", branchName)
+}
+
+// mergeCmd merges changes from another branch
+func mergeCmd(path string, args []string) {
+	// Check if this is a repository
+	if !repo.IsRepository(path) {
+		fmt.Fprintf(os.Stderr, "Error: Not a Kit repository\n")
+		os.Exit(1)
+	}
+
+	// Create a repository instance
+	r, err := repo.NewRepository(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to open repository: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Parse options
+	fs := flag.NewFlagSet("merge", flag.ExitOnError)
+
+	// Merge options
+	noCommit := fs.Bool("no-commit", false, "Do not create a commit after merge")
+	message := fs.String("m", "", "Custom merge commit message")
+	semantic := fs.Bool("semantic", true, "Use semantic merge for conflicts")
+	strategyStr := fs.String("strategy", "auto", "Merge strategy: auto, ours, theirs, manual")
+
+	// Parse args
+	err = fs.Parse(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to parse merge arguments: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Get branch to merge
+	remainingArgs := fs.Args()
+	if len(remainingArgs) != 1 {
+		fmt.Fprintf(os.Stderr, "Error: 'merge' requires exactly one branch name\n")
+		fmt.Fprintf(os.Stderr, "Usage: kit merge [options] <branch>\n")
+		os.Exit(1)
+	}
+
+	branchName := remainingArgs[0]
+
+	// Convert strategy string to enum
+	var strategy repo.MergeStrategy
+	switch *strategyStr {
+	case "auto":
+		strategy = repo.AutoMerge
+	case "ours":
+		strategy = repo.Ours
+	case "theirs":
+		strategy = repo.Theirs
+	case "manual":
+		strategy = repo.Manual
+	default:
+		fmt.Fprintf(os.Stderr, "Error: Unknown merge strategy '%s'\n", *strategyStr)
+		os.Exit(1)
+	}
+
+	// Create merge options
+	options := &repo.MergeOptions{
+		Strategy:    strategy,
+		NoCommit:    *noCommit,
+		Message:     *message,
+		UseSemantic: *semantic,
+	}
+
+	// Perform merge
+	result, err := r.Merge(branchName, options)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to merge: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Show result
+	if result.FastForward {
+		fmt.Printf("Fast-forward merge of '%s' into current branch\n", branchName)
+	} else if result.Success {
+		if len(result.Conflicts) > 0 {
+			fmt.Printf("Merge completed with %d conflicts resolved\n", len(result.Conflicts))
+		} else {
+			fmt.Println("Merge completed successfully")
+		}
+	} else {
+		fmt.Printf("Merge resulted in %d conflicts\n", len(result.Conflicts))
+		fmt.Println("Fix conflicts and then commit the result")
+	}
 }
 
 // diffCmd shows differences between commits or working directory

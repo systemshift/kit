@@ -16,6 +16,7 @@ import (
 type CommitObject struct {
 	Tree      string    `json:"tree"`      // Tree object ID
 	Parent    string    `json:"parent"`    // Parent commit ID (empty for first commit)
+	Parent2   string    `json:"parent2"`   // Second parent commit ID (for merge commits)
 	Author    string    `json:"author"`    // Author name and email
 	Committer string    `json:"committer"` // Committer name and email
 	Message   string    `json:"message"`   // Commit message
