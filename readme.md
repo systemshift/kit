@@ -2,6 +2,16 @@
 
 **A Theoretical Framework for Applying Kernel Methods to Version Control Systems**
 
+## Current Implementation
+
+Kit now features a functional implementation of these theoretical concepts, including:
+
+- **Core VCS functionality**: init, add, commit, status
+- **Branch management**: create, checkout, list branches
+- **Advanced diffing**: both syntactic and semantic diff capabilities  
+- **Intelligent merging**: using kernel methods to resolve conflicts more effectively
+- **Integrity verification**: kernel-based repository verification
+
 ## Fundamental Innovation
 
 Kit introduces kernel methods from machine learning to reimagine version control systems (VCS) from first principles. The key innovation is viewing VCS operations through the lens of kernel theory, enabling:
@@ -84,14 +94,68 @@ The core mathematical foundation of Kit is the kernel function K(x,y), which mea
 | Merge Conflicts | Text-based resolution | Semantic understanding | Fewer false conflicts |
 | Storage | Delta compression | Kernel-based compression | Potentially higher compression |
 
-## Research Directions
+## Usage Instructions
 
-Kit opens several promising research directions:
+### Building from Source
+
+```bash
+# Clone the repository
+git clone https://github.com/systemshift/kit.git
+cd kit
+
+# Build the kit binary
+make cli
+```
+
+### Basic Commands
+
+```bash
+# Initialize a new repository
+kit init
+
+# Add files to staging
+kit add file.txt
+
+# Commit changes
+kit commit -m "Initial commit"
+
+# Check repository status
+kit status
+
+# Create a new branch
+kit branch feature-branch
+
+# Switch to another branch
+kit checkout feature-branch
+
+# View differences
+kit diff HEAD~1 HEAD
+
+# Merge branches
+kit merge main
+
+# Verify repository integrity
+kit verify
+```
+
+### Implementation Details
+
+Kit is implemented in Go with a focus on:
+
+- Clean separation of core VCS operations from kernel enhancements
+- Modular architecture allowing different kernel implementations
+- Comprehensive kernel-based merge and verification functionality
+
+## Research and Development Directions
+
+Kit continues to evolve with research in several promising directions:
 
 1. **Optimal Kernel Selection**: Identifying which kernels best represent code and repository states
 2. **Feature Extraction**: Developing effective feature extractors for different file types
 3. **Theoretical Bounds**: Establishing error bounds and complexity guarantees for kernel operations
 4. **Hybrid Approaches**: Combining deterministic and probabilistic techniques for optimal results
+5. **Performance Optimization**: Improving the efficiency of kernel computations
+6. **User Experience**: Refining the developer interface to make kernel-based VCS intuitive
 
 ## Applications Beyond Version Control
 
@@ -102,6 +166,22 @@ The theoretical framework of Kit extends to:
 3. **Intelligent Code Review**: Focusing attention on semantic rather than syntactic changes
 4. **Software Archeology**: Understanding the evolution of code concepts over time
 
+## Project Structure
+
+```
+kit/
+├── cmd/kit/          # Command-line interface
+├── pkg/
+│   ├── kernel/       # Kernel method implementations
+│   └── repo/         # Core repository operations
+├── docs/             # Documentation
+└── test_repo/        # Test repository
+```
+
+## License
+
+Kit is licensed under the [BSD 3-Clause License](LICENSE).
+
 ---
 
-*This document describes the theoretical foundation of Kit. Implementation continues to evolve, but these core concepts represent the long-term vision and mathematical basis of the project.*
+*Kit bridges theory and practice in version control systems. While implementation continues to evolve, the core concepts of kernel-enhanced VCS are now demonstrated in a functional system, with increasing alignment to the theoretical foundations described above.*
