@@ -189,15 +189,26 @@ func verifyCmd(path string) {
 	}
 
 	// Create a repository instance
-	_, err := repo.NewRepository(path)
+	r, err := repo.NewRepository(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: Failed to open repository: %v\n", err)
 		os.Exit(1)
 	}
 
-	// For now, just print a message since we haven't implemented full verification
-	fmt.Println("Repository integrity verified using Random Fourier Features")
-	fmt.Println("This is currently a placeholder for the full verification functionality")
+	// Perform repository verification
+	result, err := r.VerifyIntegrity()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to verify repository integrity: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Print verification summary
+	fmt.Println(result.Summary)
+
+	// Set exit code based on verification status
+	if !result.Status {
+		os.Exit(2) // Non-zero exit code for verification failure
+	}
 }
 
 // commitCmd records changes to the repository

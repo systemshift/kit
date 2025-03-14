@@ -51,7 +51,7 @@ func NewIntegrityKernel(features, inputDim int, gamma float64, seed int64) *Inte
 
 // DataToFeatureVector converts raw data to a normalized feature vector
 func (k *IntegrityKernel) DataToFeatureVector(data []byte) []float64 {
-	// For simplicity, we'll use a sliding window approach to convert bytes to features
+	// For simplicity we'll use a sliding window approach to convert bytes to features
 	// A more sophisticated approach would use meaningful features from the repository
 
 	// Hash the data to get a fixed-length representation
@@ -61,14 +61,14 @@ func (k *IntegrityKernel) DataToFeatureVector(data []byte) []float64 {
 	vector := make([]float64, k.InputDim)
 
 	// Slide over the hash with a 4-byte window (interpreting as uint32)
-	for i := 0; i < Min(len(hash)/4, k.InputDim); i++ {
+	for i := 0; i < min(len(hash)/4, k.InputDim); i++ {
 		// Convert 4 bytes to uint32
 		val := binary.BigEndian.Uint32(hash[i*4 : i*4+4])
 		// Normalize to [-1, 1]
 		vector[i] = float64(val)/math.MaxUint32*2 - 1
 	}
 
-	// If the input dimension is larger than what we can extract from the hash,
+	// If the input dimension is larger than what we can extract from the hash
 	// we'll pad with zeros
 	for i := len(hash) / 4; i < k.InputDim; i++ {
 		vector[i] = 0
@@ -122,4 +122,12 @@ func (k *IntegrityKernel) VerifyIntegrity(data1, data2 []byte, threshold float64
 	similarity := k.Similarity(hash1, hash2)
 
 	return similarity, similarity >= threshold
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
