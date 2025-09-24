@@ -318,69 +318,178 @@ func (r *Repository) verifyWorkingTree(result *VerificationResult) error {
 
 // verifyWithKernel uses the IntegrityKernel for advanced verification
 func (r *Repository) verifyWithKernel(result *VerificationResult) error {
-	// Create a new IntegrityKernel if not already present
+	// Ensure IntegrityKernel exists
 	if r.IntegrityKernel == nil {
-		// Default parameters
-		r.IntegrityKernel = kernel.NewIntegrityKernel(100, 64, 0.1, 42)
+		r.IntegrityKernel = kernel.NewIntegrityKernel(256, 128, 0.5, 42)
 	}
 
-	// Get the current HEAD commit
-	headCommitID, err := r.resolveReference(r.State.HEAD)
-	if err != nil || headCommitID == "" {
-		// No HEAD commit, skip kernel verification
-		return nil
-	}
-
-	// Read the HEAD commit
-	commitData, err := r.readObject(headCommitID)
+	// Collect repository data for verification
+	repoData, err := r.collectRepositoryData()
 	if err != nil {
+		return fmt.Errorf("failed to collect repository data: %w", err)
+	}
+
+	if len(repoData) == 0 {
+		// Empty repository, skip kernel verification
 		return nil
 	}
 
-	// Deserialize the commit
-	var headCommit CommitObject
-	if err := json.Unmarshal(commitData, &headCommit); err != nil {
-		return nil
-	}
+	// 1. Compute baseline integrity signature
+	baselineSignature := r.IntegrityKernel.ComputeHash(repoData)
+	result.KernelResults["baseline_signature_norm"] = kernel.L2Norm(baselineSignature)
 
-	// Get the tree for the HEAD commit
-	treeData, err := r.readObject(headCommit.Tree)
+	// 2. Verify working tree consistency
+	workTreeData, err := r.collectWorkingTreeData()
 	if err != nil {
-		return nil
+		return fmt.Errorf("failed to collect working tree data: %w", err)
 	}
 
-	// Verify the integrity of the HEAD tree
-	// Extract a sample of object content to feed into the kernel
-	var sampleData []byte
-	for _, objID := range r.State.Tracked {
-		objData, err := r.readObject(objID)
+	if len(workTreeData) > 0 {
+		workTreeSignature := r.IntegrityKernel.ComputeHash(workTreeData)
+		similarity := r.IntegrityKernel.Similarity(baselineSignature, workTreeSignature)
+		result.KernelResults["worktree_similarity"] = similarity
+
+		// Flag inconsistencies if similarity is too low
+		if similarity < 0.8 {
+			result.Status = false
+			result.KernelResults["worktree_consistency"] = 0.0
+		} else {
+			result.KernelResults["worktree_consistency"] = 1.0
+		}
+	}
+
+	// 3. Verify staged changes consistency
+	if len(r.State.Stage) > 0 {
+		stagedData, err := r.collectStagedData()
 		if err != nil {
-			continue
+			return fmt.Errorf("failed to collect staged data: %w", err)
 		}
-		sampleData = append(sampleData, objData...)
-		// Limit sample size
-		if len(sampleData) >= 10000 {
-			break
+
+		if len(stagedData) > 0 {
+			stagedSignature := r.IntegrityKernel.ComputeHash(stagedData)
+			stagedSimilarity := r.IntegrityKernel.Similarity(baselineSignature, stagedSignature)
+			result.KernelResults["staged_similarity"] = stagedSimilarity
 		}
 	}
 
-	// Generate a canonical representation of the tree
-	canonicalTree, err := json.Marshal(treeData)
+	// 4. Check for potential corruption by comparing with reconstructed data
+	reconstructedData, err := r.reconstructRepositoryFromObjects()
 	if err != nil {
-		return nil
+		return fmt.Errorf("failed to reconstruct repository data: %w", err)
 	}
 
-	// Compute integrity hash using the kernel
-	treeIntegrity, _ := r.IntegrityKernel.VerifyIntegrity(canonicalTree, canonicalTree, 0.99)
-	result.KernelResults["tree_integrity"] = treeIntegrity
+	if len(reconstructedData) > 0 {
+		reconstructedSignature := r.IntegrityKernel.ComputeHash(reconstructedData)
+		reconstructionSimilarity := r.IntegrityKernel.Similarity(baselineSignature, reconstructedSignature)
+		result.KernelResults["reconstruction_similarity"] = reconstructionSimilarity
 
-	// Compare sample data against itself (should be 1.0)
-	if len(sampleData) > 0 {
-		dataIntegrity, _ := r.IntegrityKernel.VerifyIntegrity(sampleData, sampleData, 0.99)
-		result.KernelResults["data_integrity"] = dataIntegrity
+		// Mark as potentially corrupt if reconstruction differs significantly
+		if reconstructionSimilarity < 0.95 {
+			result.Status = false
+			result.KernelResults["corruption_detected"] = 1.0
+		} else {
+			result.KernelResults["corruption_detected"] = 0.0
+		}
 	}
 
 	return nil
+}
+
+// collectRepositoryData gathers representative data from the repository
+func (r *Repository) collectRepositoryData() ([]byte, error) {
+	var data []byte
+
+	// Include HEAD reference
+	if headCommitID, err := r.resolveReference(r.State.HEAD); err == nil && headCommitID != "" {
+		data = append(data, []byte("HEAD:"+headCommitID+"\n")...)
+
+		// Include commit data
+		if commitData, err := r.readObject(headCommitID); err == nil {
+			data = append(data, commitData...)
+		}
+	}
+
+	// Include tracked files metadata
+	for path, objID := range r.State.Tracked {
+		entry := fmt.Sprintf("TRACKED:%s:%s\n", path, objID)
+		data = append(data, []byte(entry)...)
+	}
+
+	// Include a sample of object data (to detect corruption)
+	count := 0
+	for _, objID := range r.State.Tracked {
+		if count >= 10 { // Limit sample size
+			break
+		}
+		if objData, err := r.readObject(objID); err == nil {
+			data = append(data, objData...)
+			count++
+		}
+	}
+
+	return data, nil
+}
+
+// collectWorkingTreeData gathers current working tree data
+func (r *Repository) collectWorkingTreeData() ([]byte, error) {
+	var data []byte
+
+	for path := range r.State.Tracked {
+		fullPath := filepath.Join(r.Path, path)
+		if fileData, err := os.ReadFile(fullPath); err == nil {
+			entry := fmt.Sprintf("WORKTREE:%s\n", path)
+			data = append(data, []byte(entry)...)
+			data = append(data, fileData...)
+		}
+	}
+
+	return data, nil
+}
+
+// collectStagedData gathers staged file data
+func (r *Repository) collectStagedData() ([]byte, error) {
+	var data []byte
+
+	for path, objID := range r.State.Stage {
+		entry := fmt.Sprintf("STAGED:%s:%s\n", path, objID)
+		data = append(data, []byte(entry)...)
+
+		// Include actual object data
+		if objData, err := r.readObject(objID); err == nil {
+			data = append(data, objData...)
+		}
+	}
+
+	return data, nil
+}
+
+// reconstructRepositoryFromObjects reconstructs repository state from stored objects
+func (r *Repository) reconstructRepositoryFromObjects() ([]byte, error) {
+	var data []byte
+
+	objectsDir := filepath.Join(r.Path, DefaultKitDir, DefaultKitObjectsDir)
+	entries, err := os.ReadDir(objectsDir)
+	if err != nil {
+		return nil, err
+	}
+
+	// Sample a subset of objects to avoid memory issues
+	count := 0
+	for _, entry := range entries {
+		if count >= 20 { // Limit reconstruction sample
+			break
+		}
+
+		if !entry.IsDir() {
+			objPath := filepath.Join(objectsDir, entry.Name())
+			if objData, err := os.ReadFile(objPath); err == nil {
+				data = append(data, objData...)
+				count++
+			}
+		}
+	}
+
+	return data, nil
 }
 
 // generateVerificationSummary creates a human-readable summary of the verification

@@ -33,10 +33,13 @@ func NewRetrievalKernel(numPermutations, universeSize int, numBands int, seed in
 	rng := rand.New(rand.NewSource(seed))
 
 	// Generate permutation functions
+	// For MinHash, we use random hash functions instead of explicit permutations
 	permutations := make([][]int, numPermutations)
 	for i := range permutations {
-		// Each permutation is a mapping of indices
-		permutations[i] = rand.Perm(universeSize)
+		// Store random coefficients for hash functions: (a*x + b) mod p
+		permutations[i] = make([]int, 2)
+		permutations[i][0] = rng.Intn(math.MaxInt32) | 1 // Ensure odd for better distribution
+		permutations[i][1] = rng.Intn(math.MaxInt32)
 	}
 
 	// Generate random coefficients for band hashing
@@ -78,10 +81,15 @@ func (k *RetrievalKernel) MinHash(document string) []int {
 
 		// Update signature for each permutation
 		for i := 0; i < k.NumPermutations; i++ {
-			// Apply permutation to shingle index
-			permutedIndex := k.Permutations[i][shingleIndex%len(k.Permutations[i])]
+			// Apply hash function: (a*x + b) mod p
+			a := k.Permutations[i][0]
+			b := k.Permutations[i][1]
+			p := 2147483647 // Large prime
 
-			// Update signature if permuted value is smaller
+			hashedValue := ((int64(a)*int64(shingleIndex) + int64(b)) % int64(p))
+			permutedIndex := int(hashedValue)
+
+			// Update signature if hashed value is smaller
 			if permutedIndex < signature[i] {
 				signature[i] = permutedIndex
 			}
@@ -103,7 +111,11 @@ func (k *RetrievalKernel) LSHSignature(minHashSignature []int) []string {
 		startIdx := band * k.NumRows
 
 		// Extract band values
-		bandValues := minHashSignature[startIdx:Min(startIdx+k.NumRows, len(minHashSignature))]
+		endIdx := startIdx + k.NumRows
+		if endIdx > len(minHashSignature) {
+			endIdx = len(minHashSignature)
+		}
+		bandValues := minHashSignature[startIdx:endIdx]
 
 		// Compute band hash
 		bandHash := k.hashBand(bandValues, band)
@@ -168,24 +180,100 @@ func (k *RetrievalKernel) AreLikelySimilar(doc1, doc2 string) bool {
 
 // documentToShingles converts a document to a set of shingles (n-grams)
 func (k *RetrievalKernel) documentToShingles(document string) []string {
-	// In a real implementation, this would use proper tokenization
-	// For simplicity, we'll use word trigrams
+	var shingles []string
 
-	// Split document into words
-	words := strings.Fields(document)
+	// For code, use both character-level and token-level shingles
 
-	// Create shingles (word trigrams)
-	shingles := make([]string, 0)
+	// 1. Character-level k-shingles (k=5 for good discrimination)
+	charShingles := k.getCharacterShingles(document, 5)
+	shingles = append(shingles, charShingles...)
 
-	if len(words) < 3 {
-		// For short documents, use individual words
-		return words
+	// 2. Token-level shingles (trigrams of words/tokens)
+	tokenShingles := k.getTokenShingles(document, 3)
+	shingles = append(shingles, tokenShingles...)
+
+	// 3. Line-level shingles for code structure
+	lineShingles := k.getLineShingles(document)
+	shingles = append(shingles, lineShingles...)
+
+	return shingles
+}
+
+// getCharacterShingles creates character-level k-shingles
+func (k *RetrievalKernel) getCharacterShingles(text string, shingleSize int) []string {
+	if len(text) < shingleSize {
+		return []string{text}
 	}
 
-	// Create trigrams
-	for i := 0; i <= len(words)-3; i++ {
-		shingle := words[i] + " " + words[i+1] + " " + words[i+2]
-		shingles = append(shingles, shingle)
+	var shingles []string
+	for i := 0; i <= len(text)-shingleSize; i++ {
+		shingle := text[i : i+shingleSize]
+		shingles = append(shingles, "CHAR:"+shingle)
+	}
+	return shingles
+}
+
+// getTokenShingles creates token-level n-grams
+func (k *RetrievalKernel) getTokenShingles(text string, n int) []string {
+	// Split by whitespace and common delimiters
+	tokens := strings.FieldsFunc(text, func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '\n' || r == '(' || r == ')' ||
+			   r == '{' || r == '}' || r == '[' || r == ']' || r == ';' || r == ','
+	})
+
+	if len(tokens) < n {
+		var result []string
+		for _, token := range tokens {
+			if strings.TrimSpace(token) != "" {
+				result = append(result, "TOKEN:"+token)
+			}
+		}
+		return result
+	}
+
+	var shingles []string
+	for i := 0; i <= len(tokens)-n; i++ {
+		// Filter out empty tokens
+		validTokens := make([]string, 0, n)
+		for j := i; j < i+n && j < len(tokens); j++ {
+			if trimmed := strings.TrimSpace(tokens[j]); trimmed != "" {
+				validTokens = append(validTokens, trimmed)
+			}
+		}
+
+		if len(validTokens) == n {
+			shingle := "TOKEN:" + strings.Join(validTokens, " ")
+			shingles = append(shingles, shingle)
+		}
+	}
+
+	return shingles
+}
+
+// getLineShingles creates shingles from code lines (for structure)
+func (k *RetrievalKernel) getLineShingles(text string) []string {
+	lines := strings.Split(text, "\n")
+	var shingles []string
+
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "//") {
+			continue // Skip empty lines and comments
+		}
+
+		// Add individual meaningful lines
+		if len(line) > 10 { // Skip very short lines
+			shingles = append(shingles, "LINE:"+line)
+		}
+
+		// Add pairs of consecutive lines for context
+		if i < len(lines)-1 {
+			nextLine := strings.TrimSpace(lines[i+1])
+			if nextLine != "" && !strings.HasPrefix(nextLine, "//") && len(nextLine) > 5 {
+				shingle := "LINES:" + line + " | " + nextLine
+				shingles = append(shingles, shingle)
+			}
+		}
 	}
 
 	return shingles

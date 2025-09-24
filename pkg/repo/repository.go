@@ -46,17 +46,19 @@ type WorkTreeEntry struct {
 
 // Repository represents a Kit repository
 type Repository struct {
-	Path            string                  // Path to the repository root
-	IntegrityKernel *kernel.IntegrityKernel // For repository integrity verification
-	SemanticKernel  *kernel.SemanticKernel  // For semantic diffing and merging
-	State           *RepositoryState        // Current repository state
+	Path            string                   // Path to the repository root
+	IntegrityKernel *kernel.IntegrityKernel  // For repository integrity verification
+	SemanticKernel  *kernel.SemanticKernel   // For semantic diffing and merging
+	RetrievalKernel *kernel.RetrievalKernel  // For efficient content search
+	State           *RepositoryState         // Current repository state
 }
 
 // NewRepository creates a new repository instance
 func NewRepository(path string) (*Repository, error) {
-	// Create default kernels
-	integrityKernel := kernel.NewIntegrityKernel(128, 64, 0.1, 42)
-	semanticKernel := kernel.NewSemanticKernel(128, 0.7)
+	// Create default kernels with optimized parameters
+	integrityKernel := kernel.NewIntegrityKernel(256, 128, 0.5, 42)     // More features for better accuracy
+	semanticKernel := kernel.NewSemanticKernel(512, 0.75)              // Higher dimension for better semantic understanding
+	retrievalKernel := kernel.NewRetrievalKernel(200, 1000000, 20, 42) // MinHash with LSH for fast retrieval
 
 	// Initialize repository state
 	state := &RepositoryState{
@@ -71,6 +73,7 @@ func NewRepository(path string) (*Repository, error) {
 		Path:            filepath.Clean(path),
 		IntegrityKernel: integrityKernel,
 		SemanticKernel:  semanticKernel,
+		RetrievalKernel: retrievalKernel,
 		State:           state,
 	}
 
@@ -82,6 +85,86 @@ func NewRepository(path string) (*Repository, error) {
 	}
 
 	return repo, nil
+}
+
+// FindSimilarContent uses the RetrievalKernel to find files similar to the given content
+func (r *Repository) FindSimilarContent(content string, threshold float64) (map[string]float64, error) {
+	if r.RetrievalKernel == nil {
+		return nil, fmt.Errorf("retrieval kernel not initialized")
+	}
+
+	results := make(map[string]float64)
+
+	// Compare against all tracked files
+	for path, objID := range r.State.Tracked {
+		// Read the object data
+		objData, err := r.readObject(objID)
+		if err != nil {
+			continue
+		}
+
+		// Estimate similarity using MinHash
+		similarity := r.RetrievalKernel.EstimateSimilarity(content, string(objData))
+
+		// Include if above threshold
+		if similarity >= threshold {
+			results[path] = similarity
+		}
+	}
+
+	return results, nil
+}
+
+// FindDuplicateContent identifies potentially duplicate content in the repository
+func (r *Repository) FindDuplicateContent() (map[string][]string, error) {
+	if r.RetrievalKernel == nil {
+		return nil, fmt.Errorf("retrieval kernel not initialized")
+	}
+
+	duplicates := make(map[string][]string)
+	processed := make(map[string]bool)
+
+	// Compare all tracked files against each other
+	for path1, objID1 := range r.State.Tracked {
+		if processed[path1] {
+			continue
+		}
+
+		objData1, err := r.readObject(objID1)
+		if err != nil {
+			continue
+		}
+
+		var similar []string
+		for path2, objID2 := range r.State.Tracked {
+			if path1 == path2 || processed[path2] {
+				continue
+			}
+
+			objData2, err := r.readObject(objID2)
+			if err != nil {
+				continue
+			}
+
+			// Check if likely similar using LSH (fast pre-filter)
+			if r.RetrievalKernel.AreLikelySimilar(string(objData1), string(objData2)) {
+				// Confirm with actual similarity calculation
+				similarity := r.RetrievalKernel.EstimateSimilarity(string(objData1), string(objData2))
+				if similarity > 0.8 { // High similarity threshold for duplicates
+					similar = append(similar, path2)
+					processed[path2] = true
+				}
+			}
+		}
+
+		if len(similar) > 0 {
+			similar = append([]string{path1}, similar...) // Include the original file
+			duplicates[path1] = similar
+		}
+		processed[path1] = true
+	}
+
+	return duplicates, nil
 }
 
 // Initialize initializes a new repository at the given path
