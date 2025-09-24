@@ -4,7 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"math"
+	"regexp"
 	"strings"
 )
 
@@ -24,39 +28,146 @@ func NewSemanticKernel(embeddingDim int, minimumScore float64) *SemanticKernel {
 }
 
 // CodeToEmbedding converts source code to a semantic embedding
-// Note: In a full implementation, this would use an actual code embedding model
-// For this prototype, we'll use a simplified tokenization and hashing approach
+// This implementation uses AST-based features for better semantic understanding
 func (k *SemanticKernel) CodeToEmbedding(code string) []float64 {
-	// Create an embedding vector
 	embedding := make([]float64, k.EmbeddingDim)
 
-	// Simplified approach: tokenize code, compute token statistics
-	// A real implementation would use AST parsing and ML-based embeddings
-
-	// Split code into tokens (simplified)
-	tokens := strings.Fields(code)
-	tokenCounts := make(map[string]int)
-
-	// Count token occurrences
-	for _, token := range tokens {
-		tokenCounts[token]++
+	// Try to parse as Go code first
+	if goEmbedding := k.extractGoFeatures(code); goEmbedding != nil {
+		copy(embedding, goEmbedding)
+	} else {
+		// Fall back to generic text-based features
+		k.extractTextFeatures(code, embedding)
 	}
 
-	// Generate embedding based on token statistics
-	// This is a very simplified approach - production would use ML models
-	for token, count := range tokenCounts {
-		// Hash the token to get a deterministic index
-		h := sha256.Sum256([]byte(token))
-		idx := int(binary.BigEndian.Uint32(h[:4]) % uint32(k.EmbeddingDim))
+	// Add structural features
+	k.addStructuralFeatures(code, embedding)
 
-		// Add token influence to embedding (weighted by count)
-		embedding[idx] += float64(count)
-	}
-
-	// Normalize embedding to unit length (for cosine similarity)
+	// Normalize to unit length
 	k.normalizeVector(embedding)
+	return embedding
+}
+
+// extractGoFeatures extracts features from Go AST
+func (k *SemanticKernel) extractGoFeatures(code string) []float64 {
+	embedding := make([]float64, k.EmbeddingDim)
+
+	// Parse Go code
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, "", code, parser.ParseComments)
+	if err != nil {
+		return nil // Not valid Go code
+	}
+
+	// Extract AST-based features
+	features := make(map[string]int)
+
+	ast.Inspect(node, func(n ast.Node) bool {
+		if n == nil {
+			return false
+		}
+
+		nodeType := fmt.Sprintf("AST_%T", n)
+		features[nodeType]++
+
+		// Extract specific patterns
+		switch v := n.(type) {
+		case *ast.FuncDecl:
+			if v.Name != nil {
+				features["FUNC_"+v.Name.Name]++
+			}
+		case *ast.CallExpr:
+			features["CALL"]++
+		case *ast.IfStmt:
+			features["IF"]++
+		case *ast.ForStmt:
+			features["FOR"]++
+		case *ast.AssignStmt:
+			features["ASSIGN"]++
+		}
+
+		return true
+	})
+
+	// Map features to embedding
+	for feature, count := range features {
+		k.addFeature(embedding, feature, float64(count))
+	}
 
 	return embedding
+}
+
+// extractTextFeatures extracts features from raw text
+func (k *SemanticKernel) extractTextFeatures(code string, embedding []float64) {
+	// Tokenize by common programming patterns
+	patterns := []string{
+		`\b(func|function|def)\b`,      // Function definitions
+		`\b(if|else|elif)\b`,           // Conditionals
+		`\b(for|while|do)\b`,           // Loops
+		`\b(class|struct|type)\b`,      // Type definitions
+		`\b(import|include|require)\b`, // Imports
+		`\b(return|yield)\b`,           // Returns
+		`[a-zA-Z_][a-zA-Z0-9_]*`,      // Identifiers
+		`[0-9]+`,                       // Numbers
+		`"[^"]*"`,                      // Strings
+		`//.*|/\*.*?\*/`,               // Comments
+	}
+
+	for _, pattern := range patterns {
+		re := regexp.MustCompile(pattern)
+		matches := re.FindAllString(code, -1)
+		for _, match := range matches {
+			k.addFeature(embedding, "TEXT_"+strings.ToUpper(match), 1.0)
+		}
+	}
+}
+
+// addStructuralFeatures adds features based on code structure
+func (k *SemanticKernel) addStructuralFeatures(code string, embedding []float64) {
+	lines := strings.Split(code, "\n")
+
+	// Line count feature
+	k.addFeature(embedding, "LINE_COUNT", math.Log1p(float64(len(lines))))
+
+	// Indentation patterns
+	indentLevels := make(map[int]int)
+	for _, line := range lines {
+		line = strings.TrimRight(line, " \t")
+		if len(line) == 0 {
+			continue
+		}
+
+		indent := 0
+		for _, ch := range line {
+			if ch == ' ' {
+				indent++
+			} else if ch == '\t' {
+				indent += 4 // Treat tab as 4 spaces
+			} else {
+				break
+			}
+		}
+		indentLevels[indent/4]++ // Normalize to indent levels
+	}
+
+	for level, count := range indentLevels {
+		feature := fmt.Sprintf("INDENT_L%d", level)
+		k.addFeature(embedding, feature, float64(count))
+	}
+
+	// Complexity indicators
+	complexityWords := []string{"if", "else", "for", "while", "switch", "case", "try", "catch"}
+	for _, word := range complexityWords {
+		count := strings.Count(strings.ToLower(code), word)
+		k.addFeature(embedding, "COMPLEXITY_"+strings.ToUpper(word), float64(count))
+	}
+}
+
+// addFeature adds a feature to the embedding vector
+func (k *SemanticKernel) addFeature(embedding []float64, feature string, weight float64) {
+	h := sha256.Sum256([]byte(feature))
+	idx := int(binary.BigEndian.Uint32(h[:4]) % uint32(k.EmbeddingDim))
+	embedding[idx] += weight
 }
 
 // normalizeVector normalizes a vector to unit length

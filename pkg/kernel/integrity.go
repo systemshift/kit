@@ -13,8 +13,8 @@ import (
 type IntegrityKernel struct {
 	Features    int         // Number of random features
 	Gamma       float64     // RBF kernel parameter
-	WeightsCos  [][]float64 // Random weights for cosine component
-	WeightsSin  [][]float64 // Random weights for sine component
+	Weights     [][]float64 // Random weights for RFF (shared for cos/sin)
+	Offsets     []float64   // Random phase offsets for RFF
 	InputDim    int         // Dimensionality of input space
 	RandomState *rand.Rand  // Random state for reproducibility
 }
@@ -25,25 +25,26 @@ func NewIntegrityKernel(features, inputDim int, gamma float64, seed int64) *Inte
 
 	// Initialize random weights for RFF
 	// These are drawn from Normal(0, 2γ) where γ is the RBF kernel parameter
-	weightsCosMat := make([][]float64, features)
-	weightsSinMat := make([][]float64, features)
+	weightsMat := make([][]float64, features)
+	offsets := make([]float64, features)
 
 	for i := 0; i < features; i++ {
-		weightsCosMat[i] = make([]float64, inputDim)
-		weightsSinMat[i] = make([]float64, inputDim)
+		weightsMat[i] = make([]float64, inputDim)
 
 		// Generate random weights from Normal(0, 2γ)
 		for j := 0; j < inputDim; j++ {
-			weightsCosMat[i][j] = rng.NormFloat64() * math.Sqrt(2*gamma)
-			weightsSinMat[i][j] = rng.NormFloat64() * math.Sqrt(2*gamma)
+			weightsMat[i][j] = rng.NormFloat64() * math.Sqrt(2*gamma)
 		}
+
+		// Random phase offset uniform in [0, 2π]
+		offsets[i] = rng.Float64() * 2 * math.Pi
 	}
 
 	return &IntegrityKernel{
 		Features:    features,
 		Gamma:       gamma,
-		WeightsCos:  weightsCosMat,
-		WeightsSin:  weightsSinMat,
+		Weights:     weightsMat,
+		Offsets:     offsets,
 		InputDim:    inputDim,
 		RandomState: rng,
 	}
@@ -51,26 +52,37 @@ func NewIntegrityKernel(features, inputDim int, gamma float64, seed int64) *Inte
 
 // DataToFeatureVector converts raw data to a normalized feature vector
 func (k *IntegrityKernel) DataToFeatureVector(data []byte) []float64 {
-	// For simplicity we'll use a sliding window approach to convert bytes to features
-	// A more sophisticated approach would use meaningful features from the repository
+	// Create multiple hash views of the data for better feature representation
+	h1 := sha256.Sum256(data)
+	h2 := sha256.Sum256(append(data, 0x01)) // Augmented hash
+	h3 := sha256.Sum256(append([]byte{0x02}, data...)) // Prefixed hash
 
-	// Hash the data to get a fixed-length representation
-	hash := sha256.Sum256(data)
-
-	// Convert hash to a feature vector
 	vector := make([]float64, k.InputDim)
+	hashes := [3][32]byte{h1, h2, h3}
 
-	// Slide over the hash with a 4-byte window (interpreting as uint32)
-	for i := 0; i < min(len(hash)/4, k.InputDim); i++ {
-		// Convert 4 bytes to uint32
-		val := binary.BigEndian.Uint32(hash[i*4 : i*4+4])
-		// Normalize to [-1, 1]
-		vector[i] = float64(val)/math.MaxUint32*2 - 1
+	// Extract features from multiple hash views
+	idx := 0
+	for hashIdx := 0; hashIdx < len(hashes) && idx < k.InputDim; hashIdx++ {
+		hash := hashes[hashIdx]
+
+		// Use 8-byte windows for more granular features
+		for i := 0; i < len(hash)/8 && idx < k.InputDim; i++ {
+			// Convert 8 bytes to uint64
+			val := binary.BigEndian.Uint64(hash[i*8 : i*8+8])
+			// Normalize to [-1, 1] with better distribution
+			vector[idx] = (float64(val)/math.MaxUint64 - 0.5) * 2
+			idx++
+		}
 	}
 
-	// If the input dimension is larger than what we can extract from the hash
-	// we'll pad with zeros
-	for i := len(hash) / 4; i < k.InputDim; i++ {
+	// Add data length as a feature (normalized)
+	if idx < k.InputDim {
+		vector[idx] = math.Tanh(float64(len(data)) / 1000000.0) // Normalize around 1MB
+		idx++
+	}
+
+	// Pad remaining dimensions with zeros
+	for i := idx; i < k.InputDim; i++ {
 		vector[i] = 0
 	}
 
@@ -82,21 +94,21 @@ func (k *IntegrityKernel) ComputeHash(data []byte) []float64 {
 	// Convert data to feature vector
 	vector := k.DataToFeatureVector(data)
 
-	// Compute RFF hash
-	hash := make([]float64, 2*k.Features)
+	// Compute RFF hash using proper RFF formula
+	hash := make([]float64, k.Features)
 
 	// Apply the random Fourier features transformation
+	// RFF approximation: φ(x) = sqrt(2/D) * cos(w^T x + b)
+	// where w ~ N(0, 2γI) and b ~ Uniform(0, 2π)
 	for i := 0; i < k.Features; i++ {
 		// Compute dot product with random weights
-		dotProdCos, dotProdSin := 0.0, 0.0
+		dotProd := 0.0
 		for j := 0; j < k.InputDim; j++ {
-			dotProdCos += vector[j] * k.WeightsCos[i][j]
-			dotProdSin += vector[j] * k.WeightsSin[i][j]
+			dotProd += vector[j] * k.Weights[i][j]
 		}
 
-		// Store cosine and sine components for the approximation
-		hash[i] = math.Cos(dotProdCos) / math.Sqrt(float64(k.Features))
-		hash[i+k.Features] = math.Sin(dotProdSin) / math.Sqrt(float64(k.Features))
+		// Apply RFF transformation with proper normalization
+		hash[i] = math.Sqrt(2.0/float64(k.Features)) * math.Cos(dotProd+k.Offsets[i])
 	}
 
 	return hash
